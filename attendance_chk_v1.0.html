@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>실시간 출석 체크 시스템</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #f8f9fa;
+        }
+        .attendance-card {
+            transition: all 0.3s ease;
+        }
+        .attendance-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 4px, 6px, 0.05);
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .shake {
+            animation: shake 0.5s ease-in-out;
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-5px); }
+            40%, 80% { transform: translateX(5px); }
+        }
+        .spinner {
+            border: 3px solid rgba(0, 0, 0, 0.1);
+            border-radius: 50%;
+            border-top: 3px solid #10b981;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        .refresh-spin {
+            animation: spin 0.5s ease-in-out;
+        }
+        /* Custom Modal Styling */
+        .modal {
+            display: none; /* 기본적으로 숨겨져 있음 */
+            position: fixed; /* 화면에 고정 */
+            z-index: 100; /* 다른 요소 위에 표시 */
+            left: 0;
+            top: 0;
+            width: 100%; /* 전체 너비 */
+            height: 100%; /* 전체 높이 */
+            overflow: auto; /* 내용이 넘치면 스크롤 가능 */
+            background-color: rgba(0,0,0,0.5); /* 반투명 검은색 배경 */
+            justify-content: center; /* 가로 중앙 정렬 */
+            align-items: center; /* 세로 중앙 정렬 */
+        }
+        .modal-content {
+            background-color: #fefefe; /* 흰색 배경 */
+            padding: 20px;
+            border-radius: 8px; /* 둥근 모서리 */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* 그림자 */
+            width: 90%;
+            max-width: 400px; /* 최대 너비 제한 */
+        }
+        .modal-buttons {
+            display: flex;
+            justify-content: flex-end; /* 버튼을 오른쪽으로 정렬 */
+            gap: 12px; /* 버튼 간격 */
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-4xl">
+        <!-- Header Section -->
+        <header class="mb-8 text-center">
+            <h1 class="text-3xl md:text-4xl font-bold text-green-700 mb-2">실시간 출석 체크 시스템</h1>
+            <p class="text-gray-600">이름을 입력하고 출석하기를 눌러주세요!</p>
+            <!-- Displays the current user's ID -->
+            <p id="currentUserId" class="text-gray-500 text-xs mt-2"></p>
+        </header>
+
+        <!-- Attendance Form Section -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <form id="attendanceForm" class="space-y-4">
+                <div>
+                    <label for="name" class="block text-sm font-medium text-gray-700 mb-1">이름</label>
+                    <input type="text" id="name" name="name" required
+                        class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                        placeholder="이름을 입력하세요">
+                </div>
+                <button type="submit" id="submitBtn" 
+                    class="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors">
+                    출석하기
+                </button>
+                <!-- Warning/Success messages inside the form -->
+                <div id="formAlert" class="hidden mt-3 p-3 rounded-md text-center text-sm"></div>
+            </form>
+        </div>
+
+        <!-- Attendance List Section -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <div class="flex justify-between items-center mb-4">
+                <div class="flex items-center">
+                    <h2 class="text-xl font-semibold text-gray-800">출석 목록</h2>
+                    <div class="ml-2 bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded-full flex items-center">
+                        <span class="w-2 h-2 bg-green-500 rounded-full mr-1 pulse"></span>
+                        실시간
+                    </div>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <div class="text-xs text-gray-500">
+                        최근 업데이트: <span id="lastUpdateTime">-</span>
+                    </div>
+                    <span id="totalCount" class="bg-green-100 text-green-800 text-sm font-medium px-2.5 py-0.5 rounded-full">
+                        총 0명
+                    </span>
+                    <!-- Refresh button (mostly for UI refresh in Firestore, as it's real-time) -->
+                    <button id="refreshBtn" class="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 p-1.5 rounded-full transition-colors flex items-center justify-center" title="새로고침">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                    </button>
+                    <!-- Admin button -->
+                    <button id="adminBtn" class="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 py-1 px-3 rounded-md transition-colors">
+                        관리자
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Loading indicator -->
+            <div id="loadingIndicator" class="flex justify-center my-8 hidden">
+                <div class="spinner mr-2"></div>
+                <span class="text-gray-600">데이터를 불러오는 중...</span>
+            </div>
+            
+            <!-- Attendance list items will be dynamically added here -->
+            <div id="attendanceList" class="space-y-3">
+                <p id="emptyMessage" class="text-center text-gray-500 py-8">아직 출석한 사람이 없습니다</p>
+            </div>
+        </div>
+
+        <!-- Admin Modal (Popup) -->
+        <div id="adminModal" class="modal">
+            <div class="modal-content">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">관리자 인증</h3>
+                <div id="passwordSection">
+                    <p class="text-gray-600 mb-4">관리자 기능을 사용하려면 비밀번호를 입력하세요.</p>
+                    <input type="password" id="adminPassword" 
+                        class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 mb-4"
+                        placeholder="비밀번호">
+                    <div class="modal-buttons">
+                        <button id="cancelAdminBtn" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors">
+                            취소
+                        </button>
+                        <button id="verifyAdminBtn" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors">
+                            확인
+                        </button>
+                    </div>
+                </div>
+                <div id="adminControlsSection" class="hidden">
+                    <p class="text-gray-600 mb-4">관리자 인증이 완료되었습니다. 아래 버튼을 사용하여 출석 기록을 관리할 수 있습니다.</p>
+                    <div class="modal-buttons">
+                        <button id="closeAdminBtn" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors">
+                            닫기
+                        </button>
+                        <button id="resetAttendanceBtn" class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors">
+                            출석 기록 초기화
+                        </button>
+                    </div>
+                </div>
+                <!-- Alert message inside admin modal -->
+                <div id="adminAlert" class="hidden mt-4 p-3 rounded-md text-center text-sm"></div>
+            </div>
+        </div>
+        
+        <!-- Custom Confirmation Modal (Popup) -->
+        <div id="confirmationModal" class="modal">
+            <div class="modal-content">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">확인</h3>
+                <p id="confirmationMessage" class="text-gray-600 mb-4"></p>
+                <div class="modal-buttons">
+                    <button id="confirmCancelBtn" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors">
+                        취소
+                    </button>
+                    <button id="confirmProceedBtn" class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors">
+                        확인
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status bar (displays progress or error messages) -->
+        <div id="statusBar" class="fixed bottom-4 right-4 bg-white rounded-lg shadow-md p-3 hidden">
+            <div class="flex items-center">
+                <div id="statusIcon" class="w-3 h-3 rounded-full mr-2"></div>
+                <span id="statusText" class="text-sm"></span>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // Import Firebase SDKs from CDN
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, query, onSnapshot, serverTimestamp, runTransaction, where, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebase configuration values provided by the Canvas AI environment.
+        // These variables are automatically available and do not need to be manually filled.
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Admin password (used for client-side UI only; actual deletion authority relies on Firebase security rules).
+        const ADMIN_PASSWORD = '24003';
+        
+        // Connect HTML elements to JavaScript variables.
+        const attendanceForm = document.getElementById('attendanceForm');
+        const nameInput = document.getElementById('name');
+        const submitBtn = document.getElementById('submitBtn');
+        const formAlert = document.getElementById('formAlert');
+        const attendanceList = document.getElementById('attendanceList');
+        const emptyMessage = document.getElementById('emptyMessage');
+        const totalCount = document.getElementById('totalCount');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const refreshBtn = document.getElementById('refreshBtn');
+        const lastUpdateTime = document.getElementById('lastUpdateTime');
+        const statusBar = document.getElementById('statusBar');
+        const statusIcon = document.getElementById('statusIcon');
+        const statusText = document.getElementById('statusText');
+        const currentUserIdDisplay = document.getElementById('currentUserId'); // Element to display user ID
+        
+        // Admin modal related elements
+        const adminBtn = document.getElementById('adminBtn');
+        const adminModal = document.getElementById('adminModal');
+        const adminPassword = document.getElementById('adminPassword');
+        const verifyAdminBtn = document.getElementById('verifyAdminBtn');
+        const cancelAdminBtn = document.getElementById('cancelAdminBtn');
+        const closeAdminBtn = document.getElementById('closeAdminBtn');
+        const resetAttendanceBtn = document.getElementById('resetAttendanceBtn');
+        const passwordSection = document.getElementById('passwordSection');
+        const adminControlsSection = document.getElementById('adminControlsSection');
+        const adminAlert = document.getElementById('adminAlert');
+
+        // Custom confirmation modal related elements
+        const confirmationModal = document.getElementById('confirmationModal');
+        const confirmationMessage = document.getElementById('confirmationMessage');
+        const confirmCancelBtn = document.getElementById('confirmCancelBtn');
+        const confirmProceedBtn = document.getElementById('confirmProceedBtn');
+
+        // Firebase service instances (will be initialized later)
+        let app;
+        let db; // Firestore database
+        let auth; // Firebase Authentication service
+        let currentUserId = null; // ID of the currently logged-in user
+        let isAuthReady = false; // Flag to indicate if authentication is complete
+
+        // Array to store attendance data
+        let attendanceData = [];
+        let isSubmitting = false; // Flag to prevent duplicate submissions
+
+        // Function to initialize Firebase and set up user authentication
+        async function initializeFirebase() {
+            try {
+                // Initialize Firebase app
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app); // Get Firestore instance
+                auth = getAuth(app); // Get Auth instance
+
+                // Set up a listener for authentication state changes
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        // If user is logged in (including anonymous login)
+                        currentUserId = user.uid; // Store user ID
+                        console.log("Firebase authenticated. User ID:", currentUserId);
+                        currentUserIdDisplay.textContent = `현재 사용자 ID: ${currentUserId}`; // Display on UI
+                        isAuthReady = true; // Mark authentication as ready
+                        startRealtimeAttendanceListener(); // Start listening for real-time data
+                    } else {
+                        // If user is not logged in, attempt anonymous login
+                        // Use the token provided by the Canvas environment if available, otherwise pure anonymous login.
+                        if (initialAuthToken) {
+                            await signInWithCustomToken(auth, initialAuthToken);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    }
+                });
+
+                // Initial authentication attempt on page load (user might already be authenticated)
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+            } catch (error) {
+                console.error("Firebase initialization or authentication failed:", error);
+                showStatus('시스템 초기화 오류', 'error');
+            }
+        }
+
+        // Execute Firebase initialization function when the page loads.
+        document.addEventListener('DOMContentLoaded', initializeFirebase);
+
+        // Sets up a real-time listener for attendance data from Firestore
+        function startRealtimeAttendanceListener() {
+            // Do not execute if Firestore or authentication is not ready.
+            if (!db || !isAuthReady) {
+                console.log("Firestore or authentication is not ready. Delaying listener start.");
+                return;
+            }
+            console.log("Starting real-time attendance listener.");
+
+            // Set the path for the Firestore collection where attendance records will be stored.
+            // The path artifacts/{appId}/public/data/attendance is a recommended public data path
+            // for the Canvas environment, allowing all authenticated users to access it.
+            const attendanceCollectionRef = collection(db, `artifacts/${appId}/public/data/attendance`);
+            
+            // Firestore query (get all documents without a specific order)
+            // Firebase Firestore might require index creation for `orderBy`,
+            // so it's preferred to fetch all data and sort it with JavaScript.
+            const q = query(attendanceCollectionRef);
+
+            // onSnapshot listener: This will automatically execute whenever data matching this query changes.
+            onSnapshot(q, (snapshot) => {
+                const updatedData = [];
+                // Iterate through the changed documents and add their data to an array.
+                snapshot.forEach((doc) => {
+                    // doc.data() is the actual document data, doc.id is the unique ID of the document.
+                    updatedData.push({ id: doc.id, ...doc.data() });
+                });
+                attendanceData = updatedData; // Update global variable
+                renderAttendanceList(); // Redraw the attendance list UI
+                updateTotalCount(); // Update total count
+                updateLastUpdateTime(); // Update last updated time
+                showStatus('출석 데이터 실시간 업데이트 완료', 'success'); // Display status message
+            }, (error) => {
+                // If an error occurs while fetching data
+                console.error("Error fetching real-time attendance data:", error);
+                showStatus('데이터 로드 오류', 'error');
+            });
+        }
+
+        // Event handler for refresh button click
+        refreshBtn.addEventListener('click', () => {
+            refreshBtn.classList.add('refresh-spin'); // Add spin animation
+            console.log('Refresh button clicked (Forcing UI refresh)');
+            renderAttendanceList(); // Just redraw the UI with current data.
+            // Since Firestore updates automatically via onSnapshot, there's no need to fetch data again.
+            setTimeout(() => {
+                refreshBtn.classList.remove('refresh-spin'); // Remove animation
+            }, 500);
+        });
+
+        // Event handler for attendance form submission
+        attendanceForm.addEventListener('submit', async (e) => {
+            e.preventDefault(); // Prevent default form submission (page reload)
+            
+            const name = nameInput.value.trim(); // Get entered name (remove whitespace)
+            if (!name) return; // Do nothing if name is empty
+            
+            console.log('Attendance form submitted', { name });
+            
+            if (isSubmitting) return; // Prevent duplicate submissions
+            
+            // Client-side duplicate check (for better user experience, server also has logic)
+            const isDuplicate = attendanceData.some(item => item.name === name);
+            if (isDuplicate) {
+                console.log('Attempted duplicate attendance', { name });
+                showFormAlert(`앗! ${name}님은 이미 출석하셨어요.`, 'warning');
+                nameInput.classList.add('shake'); // Shake animation
+                setTimeout(() => nameInput.classList.remove('shake'), 500);
+                return;
+            }
+            
+            isSubmitting = true; // Set submitting state
+            submitBtn.disabled = true; // Disable button
+            submitBtn.innerHTML = '<div class="spinner mx-auto"></div>'; // Display loading spinner
+            showStatus('출석 처리 중...', 'info', false); // Display message on status bar (no auto-hide)
+
+            try {
+                // Use Firestore transaction: Atomically process multiple operations (duplicate check, add data)
+                // to prevent data conflicts that may occur when multiple people attend simultaneously.
+                await runTransaction(db, async (transaction) => {
+                    const attendanceCollectionRef = collection(db, `artifacts/${appId}/public/data/attendance`);
+                    // Query to check if the same name already exists
+                    const q = query(attendanceCollectionRef, where("name", "==", name));
+                    const querySnapshot = await getDocs(q); // Execute query
+
+                    if (!querySnapshot.empty) {
+                        // If name already exists, rollback the transaction and throw an error.
+                        throw new Error("duplicate_attendance");
+                    }
+
+                    // Add a new attendance record to Firestore.
+                    // Use serverTimestamp() to record the time from the Firebase server for time consistency.
+                    await addDoc(attendanceCollectionRef, {
+                        name: name,
+                        timestamp: serverTimestamp(), 
+                        userId: currentUserId // Record the user ID who attended
+                    });
+                });
+
+                showFormAlert(`${name}님, 출석이 완료되었습니다!`, 'success'); // Success message
+                showStatus('출석 완료', 'success'); // Status bar message
+                nameInput.value = ''; // Clear input field
+
+            } catch (error) {
+                console.error("Error adding attendance:", error);
+                if (error.message === "duplicate_attendance") {
+                    showFormAlert(`앗! ${name}님은 이미 출석하셨어요.`, 'warning');
+                    showStatus('중복 출석 시도', 'warning');
+                } else {
+                    showFormAlert('출석 처리 중 오류가 발생했습니다.', 'error');
+                    showStatus('출석 실패', 'error');
+                }
+            } finally {
+                submitBtn.disabled = false; // Re-enable button
+                submitBtn.textContent = '출석하기'; // Restore button text
+                isSubmitting = false; // Reset submitting state
+                statusBar.classList.add('hidden'); // Hide status bar
+            }
+        });
+
+        // Function to render (display) the attendance list in HTML
+        function renderAttendanceList() {
+            console.log('Starting attendance list rendering', { dataCount: attendanceData.length });
+            
+            if (!attendanceData || attendanceData.length === 0) {
+                emptyMessage.classList.remove('hidden'); // Display "No one has attended yet" message
+                // Remove all existing attendance cards.
+                attendanceList.querySelectorAll('.attendance-card').forEach(item => item.remove());
+                return;
+            }
+            
+            emptyMessage.classList.add('hidden'); // Hide empty message
+            
+            // Remove all existing attendance cards.
+            const items = attendanceList.querySelectorAll('.attendance-card');
+            items.forEach(item => item.remove());
+            
+            // Sort attendance data by timestamp in descending order (newest first).
+            // Firebase Timestamp objects can be converted to JavaScript Date objects using .toDate() method.
+            // Handle cases where timestamp might be null (e.g., not yet committed to server) by using a default Date.
+            const sortedData = [...attendanceData].sort((a, b) => {
+                const timeA = a.timestamp && typeof a.timestamp.toDate === 'function' ? a.timestamp.toDate() : new Date(0);
+                const timeB = b.timestamp && typeof b.timestamp.toDate === 'function' ? b.timestamp.toDate() : new Date(0);
+                return timeB.getTime() - timeA.getTime(); // Sort in descending order (newest first)
+            });
+            
+            // Create and add attendance cards for each sorted item to the list.
+            sortedData.forEach((item, index) => {
+                const card = document.createElement('div');
+                card.className = 'attendance-card bg-gray-50 rounded-lg p-4 flex justify-between items-center fade-in';
+                
+                let formattedDate = '날짜 정보 없음';
+                let formattedTime = '시간 정보 없음';
+
+                // Check if timestamp is a valid Firebase Timestamp object and format it.
+                if (item.timestamp && typeof item.timestamp.toDate === 'function') {
+                    const date = item.timestamp.toDate();
+                    formattedTime = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
+                    formattedDate = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
+                } else if (item.timestamp) {
+                    // Fallback for other timestamp formats (e.g., string)
+                    try {
+                        const date = new Date(item.timestamp);
+                        formattedTime = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
+                        formattedDate = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
+                    } catch (e) {
+                        console.warn("Timestamp parsing error:", item.timestamp, e);
+                    }
+                }
+                
+                // Construct HTML content for the attendance card
+                card.innerHTML = `
+                    <div class="flex items-center">
+                        <div class="bg-green-100 text-green-800 h-10 w-10 rounded-full flex items-center justify-center font-medium mr-3">
+                            ${index + 1}
+                        </div>
+                        <div>
+                            <h3 class="font-medium text-gray-800">${item.name}</h3>
+                            <p class="text-sm text-gray-500">${formattedDate} ${formattedTime}</p>
+                        </div>
+                    </div>
+                `;
+                attendanceList.appendChild(card); // Add card to the list
+            });
+        }
+
+        // Function to update the total count of attendees
+        function updateTotalCount() {
+            totalCount.textContent = `총 ${attendanceData.length}명`;
+        }
+
+        // Function to display the last update time as the current time
+        function updateLastUpdateTime() {
+            const now = new Date();
+            const hours = now.getHours().toString().padStart(2, '0');
+            const minutes = now.getMinutes().toString().padStart(2, '0');
+            const seconds = now.getSeconds().toString().padStart(2, '0');
+            lastUpdateTime.textContent = `${hours}:${minutes}:${seconds}`;
+        }
+
+        // Function to display form alert messages (success/error/warning)
+        function showFormAlert(message, type) {
+            formAlert.textContent = message;
+            // Remove all existing color classes.
+            formAlert.classList.remove('hidden', 'bg-green-100', 'text-green-800', 'bg-red-100', 'text-red-800', 'bg-yellow-100', 'text-yellow-800');
+            
+            // Add different color classes based on message type.
+            switch (type) {
+                case 'success':
+                    formAlert.classList.add('bg-green-100', 'text-green-800');
+                    break;
+                case 'error':
+                    formAlert.classList.add('bg-red-100', 'text-red-800');
+                    break;
+                case 'warning':
+                    formAlert.classList.add('bg-yellow-100', 'text-yellow-800');
+                    break;
+            }
+            
+            formAlert.classList.add('fade-in'); // Fade-in animation
+            formAlert.classList.remove('hidden'); // Display message
+
+            // Hide the alert after 3 seconds.
+            setTimeout(() => {
+                formAlert.classList.add('hidden');
+            }, 3000);
+        }
+
+        // Function to display alert messages inside the admin modal
+        function showAdminAlert(message, type) {
+            adminAlert.textContent = message;
+            adminAlert.classList.remove('hidden', 'bg-green-100', 'text-green-800', 'bg-red-100', 'text-red-800', 'bg-yellow-100', 'text-yellow-800');
+            
+            switch (type) {
+                case 'success':
+                    adminAlert.classList.add('bg-green-100', 'text-green-800');
+                    break;
+                case 'error':
+                    adminAlert.classList.add('bg-red-100', 'text-red-800');
+                    break;
+                case 'warning':
+                    adminAlert.classList.add('bg-yellow-100', 'text-yellow-800');
+                    break;
+            }
+            
+            adminAlert.classList.add('fade-in');
+            adminAlert.classList.remove('hidden');
+            
+            setTimeout(() => {
+                adminAlert.classList.add('hidden');
+            }, 3000);
+        }
+
+        // Function to display messages on the status bar at the bottom right
+        function showStatus(message, type, autoHide = true) {
+            statusBar.classList.remove('hidden');
+            
+            switch (type) {
+                case 'success':
+                    statusIcon.className = 'w-3 h-3 rounded-full mr-2 bg-green-500';
+                    statusText.className = 'text-sm text-green-700';
+                    break;
+                case 'warning':
+                    statusIcon.className = 'w-3 h-3 rounded-full mr-2 bg-yellow-500';
+                    statusText.className = 'text-sm text-yellow-700';
+                    break;
+                case 'info':
+                    statusIcon.className = 'w-3 h-3 rounded-full mr-2 bg-blue-500';
+                    statusText.className = 'text-sm text-blue-700';
+                    break;
+                case 'error':
+                    statusIcon.className = 'w-3 h-3 rounded-full mr-2 bg-red-500';
+                    statusText.className = 'text-sm text-red-700';
+                    break;
+            }
+            
+            statusText.textContent = message;
+            
+            if (autoHide) {
+                setTimeout(() => {
+                    statusBar.classList.add('hidden');
+                }, 3000);
+            }
+        }
+
+        // Function to show/hide the loading indicator (may not be frequently used due to onSnapshot)
+        function showLoading(isLoading) {
+            if (isLoading) {
+                loadingIndicator.classList.remove('hidden');
+            } else {
+                loadingIndicator.classList.add('hidden');
+            }
+        }
+
+        // Event listeners for admin modal
+        adminBtn.addEventListener('click', () => {
+            adminModal.style.display = 'flex'; // Show modal and center it using Flexbox
+            adminPassword.value = ''; // Clear password input
+            passwordSection.classList.remove('hidden'); // Show password input section
+            adminControlsSection.classList.add('hidden'); // Hide admin control section
+            adminAlert.classList.add('hidden'); // Hide alert messages
+        });
+
+        cancelAdminBtn.addEventListener('click', () => {
+            adminModal.style.display = 'none'; // Close admin modal
+        });
+
+        closeAdminBtn.addEventListener('click', () => {
+            adminModal.style.display = 'none'; // Close admin modal
+        });
+
+        verifyAdminBtn.addEventListener('click', () => {
+            // Check if entered password matches the ADMIN_PASSWORD
+            if (adminPassword.value === ADMIN_PASSWORD) {
+                passwordSection.classList.add('hidden'); // Hide password section
+                adminControlsSection.classList.remove('hidden'); // Show admin control section
+                showAdminAlert('관리자 인증 완료!', 'success'); // Success message
+            } else {
+                adminPassword.classList.add('shake'); // Shake animation
+                setTimeout(() => adminPassword.classList.remove('shake'), 500);
+                adminPassword.value = ''; // Clear password input
+                adminPassword.focus(); // Focus back on input
+                showAdminAlert('비밀번호가 일치하지 않습니다.', 'error'); // Error message
+            }
+        });
+
+        // Event handler for resetting attendance records
+        resetAttendanceBtn.addEventListener('click', () => {
+            // Use custom confirmation modal to ask user for confirmation
+            showConfirmationModal('정말로 모든 출석 기록을 초기화하시겠습니까? 이 작업은 되돌릴 수 없습니다.', async (confirmed) => {
+                if (confirmed) { // If user clicked 'Confirm'
+                    resetAttendanceBtn.disabled = true; // Disable button
+                    resetAttendanceBtn.innerHTML = '<div class="spinner mx-auto"></div>'; // Display loading spinner
+                    
+                    console.log('Attendance record reset requested');
+                    showStatus('출석 기록 초기화 중...', 'info', false);
+
+                    try {
+                        const attendanceCollectionRef = collection(db, `artifacts/${appId}/public/data/attendance`);
+                        const q = query(attendanceCollectionRef);
+                        const querySnapshot = await getDocs(q); // Get all current attendance documents.
+
+                        // Use Firestore transaction to safely handle multiple document deletions at once.
+                        if (!querySnapshot.empty) { // If there are documents
+                            await runTransaction(db, async (transaction) => {
+                                querySnapshot.forEach((doc) => {
+                                    transaction.delete(doc.ref); // Add each document to the delete transaction
+                                });
+                            });
+                        }
+                        
+                        showAdminAlert('출석 기록이 초기화되었습니다.', 'success'); // Success message
+                        showStatus('출석 기록 초기화 완료', 'success'); // Status bar message
+                        
+                        // Since the Firestore onSnapshot listener detects data changes and automatically updates the UI,
+                        // there's no need to call fetchAttendanceData separately.
+                        // Wait briefly until the UI update is complete before closing the modal.
+                        setTimeout(() => {
+                            adminModal.style.display = 'none'; // Close admin modal
+                        }, 1000); // Close modal after 1 second
+
+                    } catch (error) {
+                        console.error("Error resetting attendance:", error);
+                        showAdminAlert('초기화 중 오류가 발생했습니다.', 'error'); // Error message
+                        showStatus('초기화 실패', 'error'); // Status bar message
+                    } finally {
+                        resetAttendanceBtn.disabled = false; // Re-enable button
+                        resetAttendanceBtn.textContent = '출석 기록 초기화'; // Restore button text
+                        statusBar.classList.add('hidden'); // Hide status bar
+                    }
+                } else {
+                    console.log('Reset cancelled');
+                }
+            });
+        });
+        
+        // Function to display a custom confirmation modal and pass user's choice via callback
+        function showConfirmationModal(message, callback) {
+            confirmationMessage.textContent = message; // Set message
+            confirmationModal.style.display = 'flex'; // Show modal (using Flexbox for centering)
+
+            // On 'Confirm' button click
+            const handleConfirm = () => {
+                confirmationModal.style.display = 'none'; // Hide modal
+                // Remove event listeners (to prevent multiple executions)
+                confirmProceedBtn.removeEventListener('click', handleConfirm);
+                confirmCancelBtn.removeEventListener('click', handleCancel);
+                callback(true); // Pass true to callback (user confirmed)
+            };
+
+            // On 'Cancel' button click
+            const handleCancel = () => {
+                confirmationModal.style.display = 'none'; // Hide modal
+                // Remove event listeners
+                confirmProceedBtn.removeEventListener('click', handleConfirm);
+                confirmCancelBtn.removeEventListener('click', handleCancel);
+                callback(false); // Pass false to callback (user cancelled)
+            };
+
+            // Attach event listeners to buttons
+            confirmProceedBtn.addEventListener('click', handleConfirm);
+            confirmCancelBtn.addEventListener('click', handleCancel);
+
+            // Close modal when clicking outside (treat as cancel)
+            confirmationModal.addEventListener('click', function(e) {
+                if (e.target === confirmationModal) {
+                    handleCancel();
+                }
+            });
+        }
+
+        // Event to close admin modal when clicking outside (password section)
+        adminModal.addEventListener('click', (e) => {
+            if (e.target === adminModal) {
+                adminModal.style.display = 'none';
+            }
+        });
+
+        // If Enter key is pressed in the admin password input, simulate a click on the verify button.
+        adminPassword.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                verifyAdminBtn.click();
+            }
+        });
+        
+        // Refresh data when page visibility (tab activation) changes (optional)
+        // This is not strictly necessary due to Firestore's onSnapshot, but can be kept
+        // for potential synchronization edge cases.
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                console.log('Page visibility changed: visible');
+                // You can re-initiate the data listener by calling startRealtimeAttendanceListener()
+                // or simply re-render the current data by calling renderAttendanceList().
+                // Since onSnapshot is already active, this part might be removed depending on your needs.
+            }
+        });
+    </script>
+</body>
+</html>
