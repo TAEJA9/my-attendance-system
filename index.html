@@ -223,7 +223,14 @@
         // Firebase configuration values provided by the Canvas AI environment.
         // These variables are automatically available and do not need to be manually filled.
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const firebaseConfig = {
+  apiKey: "AIzaSyBs1BKvEbgTDEZOozZXcpJT_2fbUapT6Zk",
+  authDomain: "jy-attendance-app.firebaseapp.com",
+  projectId: "jy-attendance-app",
+  storageBucket: "jy-attendance-app.firebasestorage.app",
+  messagingSenderId: "119128470991",
+  appId: "1:119128470991:web:09fbd0d03fb6283b1b0eba"
+};
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         // Admin password (used for client-side UI only; actual deletion authority relies on Firebase security rules).
