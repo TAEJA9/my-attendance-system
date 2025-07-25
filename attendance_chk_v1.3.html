@@ -1,0 +1,1106 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>실시간 출석 체크 시스템</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <!-- QR 코드 라이브러리 추가 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <!-- Font Awesome 아이콘 라이브러리 추가 (더 예쁜 아이콘을 위해!) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #f8f9fa;
+        }
+        .attendance-card {
+            transition: all 0.3s ease;
+        }
+        .attendance-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 4px, 6px, 0.05);
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .shake {
+            animation: shake 0.5s ease-in-out;
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-5px); }
+            40%, 80% { transform: translateX(5px); }
+        }
+        .spinner {
+            border: 3px solid rgba(0, 0, 0, 0.1);
+            border-radius: 50%;
+            border-top: 3px solid #10b981;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        .refresh-spin {
+            animation: spin 0.5s ease-in-out;
+        }
+        /* Custom Modal Styling */
+        .modal {
+            display: none; /* 기본적으로 숨겨져 있음 */
+            position: fixed; /* 화면에 고정 */
+            z-index: 100; /* 다른 요소 위에 표시 */
+            left: 0;
+            top: 0;
+            width: 100%; /* 전체 너비 */
+            height: 100%; /* 전체 높이 */
+            overflow: auto; /* 내용이 넘치면 스크롤 가능 */
+            background-color: rgba(0,0,0,0.5); /* 반투명 검은색 배경 */
+            justify-content: center; /* 가로 중앙 정렬 */
+            align-items: center; /* 세로 중앙 정렬 */
+        }
+        .modal-content {
+            background-color: #fefefe; /* 흰색 배경 */
+            padding: 20px;
+            border-radius: 8px; /* 둥근 모서리 */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* 그림자 */
+            width: 90%;
+            max-width: 400px; /* 최대 너비 제한 */
+            text-align: center; /* 모달 내용 가운데 정렬 */
+            position: relative; /* 닫기 버튼 배치를 위함 */
+        }
+        .modal-buttons {
+            display: flex;
+            justify-content: flex-end; /* 버튼을 오른쪽으로 정렬 */
+            gap: 12px; /* 버튼 간격 */
+            margin-top: 20px;
+        }
+        .delete-btn {
+            background-color: #ef4444; /* red-500 */
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.875rem; /* text-sm */
+            transition: background-color 0.2s;
+        }
+        .delete-btn:hover {
+            background-color: #dc2626; /* red-600 */
+        }
+        /* 모달 닫기 버튼 */
+        .modal-close-btn { /* QR 코드 모달과 다른 모달에 공통 적용 */
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 24px;
+            font-weight: bold;
+            color: #aaa;
+            cursor: pointer;
+            background: none;
+            border: none;
+            padding: 0;
+            line-height: 1;
+        }
+        .modal-close-btn:hover,
+        .modal-close-btn:focus {
+            color: #000;
+            text-decoration: none;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+    <div class="container mx-auto px-4 py-8 max-w-4xl flex-grow">
+        <!-- Header Section -->
+        <header class="mb-8 text-center">
+            <h1 class="text-3xl md:text-4xl font-bold text-green-700 mb-2">실시간 출석 체크 시스템</h1>
+            <p class="text-gray-600">이름을 입력하고 출석하기를 눌러주세요!</p>
+            <!-- Displays the current user's ID - Hidden as requested -->
+            <p id="currentUserId" class="text-gray-500 text-xs mt-2 hidden"></p>
+        </header>
+
+        <!-- Attendance Form Section -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <form id="attendanceForm" class="space-y-4">
+                <div>
+                    <label for="name" class="block text-sm font-medium text-gray-700 mb-1">이름</label>
+                    <input type="text" id="name" name="name" required
+                        class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                        placeholder="이름을 입력하세요">
+                </div>
+                <button type="submit" id="submitBtn" 
+                    class="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors">
+                    출석하기
+                </button>
+                <!-- Warning/Success messages inside the form -->
+                <div id="formAlert" class="hidden mt-3 p-3 rounded-md text-center text-sm"></div>
+            </form>
+        </div>
+
+        <!-- Attendance List Section -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <div class="flex justify-between items-center mb-4">
+                <div class="flex items-center">
+                    <h2 class="text-xl font-semibold text-gray-800">출석 현황</h2><!-- Text changed: 출석 목록 -> 출석 현황 -->
+                    <div class="ml-2 bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded-full flex items-center">
+                        <span class="w-2 h-2 bg-green-500 rounded-full mr-1 pulse"></span>
+                        실시간
+                    </div>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <div class="text-xs text-gray-500">
+                        최근 업데이트: <span id="lastUpdateTime">-</span>
+                    </div>
+                    <span id="totalCount" class="bg-green-100 text-green-800 text-sm font-medium px-2.5 py-0.5 rounded-full">
+                        총 0명
+                    </span>
+                    <!-- Refresh button (mostly for UI refresh in Firestore, as it's real-time) -->
+                    <button id="refreshBtn" class="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 p-1.5 rounded-full transition-colors flex items-center justify-center" title="새로고침">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                    </button>
+                    <!-- Admin button -->
+                    <button id="adminBtn" class="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 py-1 px-3 rounded-md transition-colors">
+                        관리자
+                    </button>
+                    <!-- QR Code button added here (Improved icon) -->
+                    <button id="qrCodeBtn" class="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 p-1.5 rounded-full transition-colors flex items-center justify-center" title="QR 코드 생성">
+                        <i class="fas fa-qrcode text-lg"></i> <!-- Font Awesome QR 코드 아이콘 -->
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Loading indicator -->
+            <div id="loadingIndicator" class="flex justify-center my-8 hidden">
+                <div class="spinner mr-2"></div>
+                <span class="text-gray-600">데이터를 불러오는 중...</span>
+            </div>
+            
+            <!-- Attendance list items will be dynamically added here -->
+            <div id="attendanceList" class="space-y-3">
+                <p id="emptyMessage" class="text-center text-gray-500 py-8">아직 출석한 사람이 없습니다</p>
+            </div>
+        </div>
+
+        <!-- Admin Modal (Popup) -->
+        <div id="adminModal" class="modal">
+            <div class="modal-content">
+                <button class="modal-close-btn" id="adminModalCloseBtn">&times;</button> <!-- 닫기 버튼 추가 -->
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">관리자 인증</h3>
+                <div id="passwordSection">
+                    <p class="text-gray-600 mb-4">관리자 기능을 사용하려면 비밀번호를 입력하세요.</p>
+                    <input type="password" id="adminPassword" 
+                        class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 mb-4"
+                        placeholder="비밀번호">
+                    <div class="modal-buttons">
+                        <button id="cancelAdminBtn" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors">
+                            취소
+                        </button>
+                        <button id="verifyAdminBtn" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors">
+                            확인
+                        </button>
+                    </div>
+                </div>
+                <div id="adminControlsSection" class="hidden">
+                    <p class="text-gray-600 mb-4">관리자 인증이 완료되었습니다.</p>
+                    <div class="modal-buttons justify-end"> <!-- 기존 버튼 -->
+                        <button id="closeAdminBtn" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors">
+                            닫기
+                        </button>
+                        <button id="resetAttendanceBtn" class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors">
+                            모든 출석 기록 초기화
+                        </button>
+                    </div>
+                    <!-- NEW: LLM 요약 버튼 추가 -->
+                    <div class="modal-buttons justify-center mt-4">
+                        <button id="generateSummaryBtn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
+                            출석 현황 요약 ✨
+                        </button>
+                    </div>
+                </div>
+                <!-- Alert message inside admin modal -->
+                <div id="adminAlert" class="hidden mt-4 p-3 rounded-md text-center text-sm"></div>
+            </div>
+        </div>
+        
+        <!-- Custom Confirmation Modal (Popup) -->
+        <div id="confirmationModal" class="modal">
+            <div class="modal-content relative">
+                <button class="modal-close-btn" id="confirmModalCloseBtn">&times;</button> <!-- 닫기 버튼 추가 -->
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">확인</h3>
+                <p id="confirmationMessage" class="text-gray-600 mb-4"></p>
+                <div class="modal-buttons">
+                    <button id="confirmCancelBtn" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors">
+                        취소
+                    </button>
+                    <button id="confirmProceedBtn" class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors">
+                        확인
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- QR Code Modal (New) -->
+        <div id="qrCodeModal" class="modal">
+            <div class="modal-content relative">
+                <button class="modal-close-btn" id="qrModalCloseBtn">&times;</button>
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">출석 시스템 QR 코드</h3>
+                <p class="text-gray-600 text-sm mb-4">이 QR 코드를 스캔하여 출석 시스템에 접속하세요.</p>
+                <div id="qrcode" class="flex justify-center p-4 bg-white rounded-lg shadow-inner">
+                    <!-- QR 코드가 여기에 생성됩니다 -->
+                </div>
+                <p id="qrCodeUrlDisplay" class="text-sm text-blue-600 mt-4 break-all"></p>
+                <button id="copyUrlBtn" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
+                    URL 복사
+                </button>
+            </div>
+        </div>
+
+        <!-- NEW: LLM Summary Modal -->
+        <div id="summaryModal" class="modal">
+            <div class="modal-content relative">
+                <button class="modal-close-btn" id="summaryModalCloseBtn">&times;</button>
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">✨ 출석 현황 요약 ✨</h3>
+                <div id="summaryContent" class="text-gray-700 text-left mb-4 whitespace-pre-wrap">
+                    <!-- 요약 내용이 여기에 표시됩니다 -->
+                </div>
+                <div id="summaryLoadingIndicator" class="flex justify-center my-4 hidden">
+                    <div class="spinner mr-2"></div>
+                    <span class="text-gray-600">요약 생성 중...</span>
+                </div>
+                <div class="modal-buttons justify-center"> <!-- Center buttons -->
+                    <button id="closeSummaryModalBtn" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors">
+                        닫기
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status bar (displays progress or error messages) -->
+        <div id="statusBar" class="fixed bottom-4 right-4 bg-white rounded-lg shadow-md p-3 hidden">
+            <div class="flex items-center">
+                <div id="statusIcon" class="w-3 h-3 rounded-full mr-2"></div>
+                <span id="statusText" class="text-sm"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer Section -->
+    <footer class="mt-8 py-4 text-center text-gray-500 text-sm">
+        <p>&copy; 2025. M.I.O Project</p>
+    </footer>
+
+    <script type="module">
+        // Import Firebase SDKs from CDN
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, query, onSnapshot, serverTimestamp, runTransaction, where, getDocs, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // ==================================================================================
+        // ★★★ 사용자님의 실제 Firebase 설정 정보를 아래에 붙여넣으세요! ★★★
+        // 이 아래 'const firebaseConfig = { ... };' 블록을
+        // 당신의 Firebase 콘솔에서 복사한 정확한 설정 정보로 통째로 교체하세요.
+        // 예시: const firebaseConfig = { apiKey: "AIzaSy...", authDomain: "...", projectId: "...", ... };
+        // ==================================================================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyBs1BKvEbgTDEZOozZXcpJT_2fbUapT6Zk", // 이 부분을 당신의 실제 API 키로 바꾸세요
+            authDomain: "jy-attendance-app.firebaseapp.com", // 이 부분을 당신의 실제 Auth 도메인으로 바꾸세요
+            projectId: "jy-attendance-app", // 이 부분을 당신의 실제 프로젝트 ID로 바꾸세요
+            storageBucket: "jy-attendance-app.firebasestorage.app", // 이 부분을 당신의 실제 스토리지 버킷으로 바꾸세요
+            messagingSenderId: "119128470991", // 이 부분을 당신의 실제 메시징 ID로 바꾸세요
+            appId: "1:119128470991:web:09fbd0d03fb6283b1b0eba" // 이 부분을 당신의 실제 앱 ID로 바꾸세요
+        };
+        // ==================================================================================
+        // ★★★ 위 PLACEHOLDER 내용을 당신의 진짜 정보로 바꾸는 것이 가장 중요합니다! ★★★
+        // ==================================================================================
+
+        // GitHub Pages에서는 Canvas 환경에서 제공되는 토큰이나 앱 ID가 없으므로 직접 설정합니다.
+        const initialAuthToken = null; 
+        const appId = firebaseConfig.projectId; // 프로젝트 ID를 앱 ID로 사용합니다.
+
+        // Admin password (used for client-side UI only; actual deletion authority relies on Firebase security rules).
+        const ADMIN_PASSWORD = '24003';
+        
+        // Connect HTML elements to JavaScript variables.
+        const attendanceForm = document.getElementById('attendanceForm');
+        const nameInput = document.getElementById('name');
+        const submitBtn = document.getElementById('submitBtn');
+        const formAlert = document.getElementById('formAlert');
+        const attendanceList = document.getElementById('attendanceList');
+        const emptyMessage = document.getElementById('emptyMessage');
+        const totalCount = document.getElementById('totalCount');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const refreshBtn = document.getElementById('refreshBtn');
+        const lastUpdateTime = document.getElementById('lastUpdateTime');
+        const statusBar = document.getElementById('statusBar');
+        const statusIcon = document.getElementById('statusIcon');
+        const statusText = document.getElementById('statusText');
+        const currentUserIdDisplay = document.getElementById('currentUserId'); 
+        
+        // Admin modal related elements
+        const adminBtn = document.getElementById('adminBtn');
+        const adminModal = document.getElementById('adminModal');
+        const adminPassword = document.getElementById('adminPassword');
+        const verifyAdminBtn = document.getElementById('verifyAdminBtn');
+        const cancelAdminBtn = document.getElementById('cancelAdminBtn');
+        const closeAdminBtn = document.getElementById('closeAdminBtn');
+        const resetAttendanceBtn = document.getElementById('resetAttendanceBtn');
+        const passwordSection = document.getElementById('passwordSection');
+        const adminControlsSection = document.getElementById('adminControlsSection');
+        const adminAlert = document.getElementById('adminAlert');
+        const adminModalCloseBtn = document.getElementById('adminModalCloseBtn'); // Admin modal 닫기 버튼
+
+        // Custom confirmation modal related elements
+        const confirmationModal = document.getElementById('confirmationModal');
+        const confirmationMessage = document.getElementById('confirmationMessage');
+        const confirmCancelBtn = document.getElementById('confirmCancelBtn');
+        const confirmProceedBtn = document.getElementById('confirmProceedBtn');
+        const confirmModalCloseBtn = document.getElementById('confirmModalCloseBtn'); // Confirmation modal 닫기 버튼
+
+        // NEW: QR Code Modal elements
+        const qrCodeBtn = document.getElementById('qrCodeBtn');
+        const qrCodeModal = document.getElementById('qrCodeModal');
+        const qrModalCloseBtn = document.getElementById('qrModalCloseBtn');
+        const qrcodeContainer = document.getElementById('qrcode'); // QR 코드가 그려질 DIV
+        const qrCodeUrlDisplay = document.getElementById('qrCodeUrlDisplay'); // QR 코드 URL 표시
+        const copyUrlBtn = document.getElementById('copyUrlBtn'); // URL 복사 버튼
+
+        // NEW: LLM Summary Modal elements
+        const summaryModal = document.getElementById('summaryModal');
+        const summaryModalCloseBtn = document.getElementById('summaryModalCloseBtn');
+        const summaryContent = document.getElementById('summaryContent');
+        const summaryLoadingIndicator = document.getElementById('summaryLoadingIndicator');
+        const generateSummaryBtn = document.getElementById('generateSummaryBtn'); // Admin Controls Section에 있는 새 버튼
+        const closeSummaryModalBtn = document.getElementById('closeSummaryModalBtn'); // Summary Modal의 닫기 버튼
+
+        // Firebase service instances (will be initialized later)
+        let app;
+        let db; // Firestore database
+        let auth; // Firebase Authentication service
+        let currentUserId = null; // ID of the currently logged-in user
+        let isAuthReady = false; // Flag to indicate if authentication is complete
+        let isAdminMode = false; // New flag to track admin mode
+
+        // Array to store attendance data
+        let attendanceData = [];
+        let isSubmitting = false; // Flag to prevent duplicate submissions
+
+        // Function to initialize Firebase and set up user authentication
+        async function initializeFirebase() {
+            try {
+                // Initialize Firebase app
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app); // Get Firestore instance
+                auth = getAuth(app); // Get Auth instance
+
+                // Set up a listener for authentication state changes
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        // If user is logged in (including anonymous login)
+                        currentUserId = user.uid; // Store user ID
+                        console.log("Firebase authenticated. User ID:", currentUserId);
+                        currentUserIdDisplay.textContent = `현재 사용자 ID: ${currentUserId}`; 
+                        isAuthReady = true; // Mark authentication as ready
+                        startRealtimeAttendanceListener(); // Start listening for real-time data
+                    } else {
+                        // If user is not logged in, attempt anonymous login
+                        await signInAnonymously(auth);
+                    }
+                });
+
+                // Initial authentication attempt on page load (user might already be authenticated)
+                if (!auth.currentUser) {
+                     await signInAnonymously(auth);
+                }
+
+            } catch (error) {
+                console.error("Firebase initialization or authentication failed:", error);
+                // 오류 발생 시 사용자에게 더 명확한 메시지 표시
+                showStatus('시스템 초기화 중 오류가 발생했습니다. Firebase 설정을 확인해주세요.', 'error', false); 
+            }
+        }
+
+        // Execute Firebase initialization function when the page loads.
+        document.addEventListener('DOMContentLoaded', initializeFirebase);
+
+        // Sets up a real-time listener for attendance data from Firestore
+        function startRealtimeAttendanceListener() {
+            // Do not execute if Firestore or authentication is not ready.
+            if (!db || !isAuthReady) {
+                console.log("Firestore or authentication is not ready. Delaying listener start.");
+                return;
+            }
+            console.log("Starting real-time attendance listener.");
+
+            // Set the path for the Firestore collection where attendance records will be stored.
+            const attendanceCollectionRef = collection(db, `artifacts/${appId}/public/data/attendance`);
+            
+            // Firestore query (get all documents)
+            const q = query(attendanceCollectionRef);
+
+            // onSnapshot listener: This will automatically execute whenever data matching this query changes.
+            onSnapshot(q, (snapshot) => {
+                let rawData = [];
+                snapshot.forEach((doc) => {
+                    rawData.push({ id: doc.id, ...doc.data() });
+                });
+
+                // 1. Sort rawData by timestamp in ascending order to determine attendance order
+                const orderedForNumbering = [...rawData].sort((a, b) => {
+                    const timeA = a.timestamp && typeof a.timestamp.toDate === 'function' ? a.timestamp.toDate() : new Date(0);
+                    const timeB = b.timestamp && typeof b.timestamp.toDate === 'function' ? b.timestamp.toDate() : new Date(0);
+                    return timeA.getTime() - timeB.getTime(); // Oldest first
+                });
+
+                // 2. Assign attendance order (1, 2, 3...)
+                const updatedDataWithOrder = orderedForNumbering.map((item, index) => ({
+                    ...item,
+                    attendanceOrder: index + 1 // Assign 1, 2, 3... based on attendance time
+                }));
+
+                // 3. Sort for display (newest first) and store in attendanceData
+                attendanceData = [...updatedDataWithOrder].sort((a, b) => {
+                    const timeA = a.timestamp && typeof a.timestamp.toDate === 'function' ? a.timestamp.toDate() : new Date(0);
+                    const timeB = b.timestamp && typeof b.timestamp.toDate === 'function' ? b.timestamp.toDate() : new Date(0);
+                    return timeB.getTime() - timeA.getTime(); // Newest first for display
+                });
+
+                // Now attendanceData contains items with attendanceOrder, sorted for display.
+                renderAttendanceList();
+                updateTotalCount();
+                updateLastUpdateTime();
+                showStatus('출석 데이터 실시간 업데이트 완료', 'success');
+            }, (error) => {
+                // If an error occurs while fetching data
+                console.error("Error fetching real-time attendance data:", error);
+                showStatus('데이터 로드 오류', 'error');
+            });
+        }
+
+        // Event handler for refresh button click
+        refreshBtn.addEventListener('click', () => {
+            refreshBtn.classList.add('refresh-spin'); // Add spin animation
+            console.log('Refresh button clicked (Forcing UI refresh)');
+            renderAttendanceList(); // Just redraw the UI with current data.
+            // Since Firestore updates automatically via onSnapshot, there's no need to fetch data again.
+            setTimeout(() => {
+                refreshBtn.classList.remove('refresh-spin'); // Remove animation
+            }, 500);
+        });
+
+        // Event handler for attendance form submission
+        attendanceForm.addEventListener('submit', async (e) => {
+            e.preventDefault(); // Prevent default form submission (page reload)
+            
+            const name = nameInput.value.trim(); // Get entered name (remove whitespace)
+            if (!name) {
+                showFormAlert('이름을 입력해주세요!', 'warning');
+                return; // Do nothing if name is empty
+            }
+            
+            console.log('Attendance form submitted', { name });
+            
+            if (isSubmitting) return; // Prevent duplicate submissions
+            
+            // Client-side duplicate check (for better user experience, server also has logic)
+            const isDuplicate = attendanceData.some(item => item.name === name);
+            if (isDuplicate) {
+                console.log('Attempted duplicate attendance', { name });
+                showFormAlert(`앗! ${name}님은 이미 출석하셨어요.`, 'warning');
+                nameInput.classList.add('shake'); // Shake animation
+                setTimeout(() => nameInput.classList.remove('shake'), 500);
+                return;
+            }
+            
+            isSubmitting = true; // Set submitting state
+            submitBtn.disabled = true; // Disable button
+            submitBtn.innerHTML = '<div class="spinner mx-auto"></div>'; // Display loading spinner
+            showStatus('출석 처리 중...', 'info', false); // Display message on status bar (no auto-hide)
+
+            try {
+                // Use Firestore transaction: Atomically process multiple operations (duplicate check, add data)
+                // to prevent data conflicts that may occur when multiple people attend simultaneously.
+                await runTransaction(db, async (transaction) => {
+                    const attendanceCollectionRef = collection(db, `artifacts/${appId}/public/data/attendance`);
+                    // Query to check if the same name already exists
+                    const q = query(attendanceCollectionRef, where("name", "==", name));
+                    const querySnapshot = await getDocs(q); // Execute query
+
+                    if (!querySnapshot.empty) {
+                        // If name already exists, rollback the transaction and throw an error.
+                        throw new Error("duplicate_attendance");
+                    }
+
+                    // Add a new attendance record to Firestore.
+                    // Use serverTimestamp() to record the time from the Firebase server for time consistency.
+                    await addDoc(attendanceCollectionRef, {
+                        name: name,
+                        timestamp: serverTimestamp(), 
+                        userId: currentUserId // Record the user ID who attended
+                    });
+                });
+
+                showFormAlert(`${name}님, 출석이 완료되었습니다!`, 'success'); // Success message
+                showStatus('출석 완료', 'success'); // Status bar message
+                nameInput.value = ''; // Clear input field
+
+            } catch (error) {
+                console.error("Error adding attendance:", error);
+                if (error.message === "duplicate_attendance") {
+                    showFormAlert(`앗! ${name}님은 이미 출석하셨어요.`, 'warning');
+                    showStatus('중복 출석 시도', 'warning');
+                } else if (error.code === 'permission-denied') { // Firestore 보안 규칙 오류
+                    showFormAlert('출석 권한이 없습니다. 관리자에게 문의하세요.', 'error');
+                    showStatus('출석 실패: 권한 없음', 'error');
+                }
+                else {
+                    showFormAlert('출석 처리 중 오류가 발생했습니다.', 'error');
+                    showStatus('출석 실패', 'error');
+                }
+            } finally {
+                submitBtn.disabled = false; // Re-enable button
+                submitBtn.textContent = '출석하기'; // Restore button text
+                isSubmitting = false; // Reset submitting state
+                statusBar.classList.add('hidden'); // Hide status bar
+            }
+        });
+
+        // Function to render (display) the attendance list in HTML
+        function renderAttendanceList() {
+            console.log('Starting attendance list rendering', { dataCount: attendanceData.length });
+            
+            if (!attendanceData || attendanceData.length === 0) {
+                emptyMessage.classList.remove('hidden'); // Display "No one has attended yet" message
+                // Remove all existing attendance cards.
+                attendanceList.querySelectorAll('.attendance-card').forEach(item => item.remove());
+                return;
+            }
+            
+            emptyMessage.classList.add('hidden'); // Hide empty message
+            
+            // Remove all existing attendance cards.
+            // Using a loop to remove children, ensuring emptyMessage isn't removed.
+            while (attendanceList.firstChild) {
+                if (attendanceList.firstChild.id !== 'emptyMessage') {
+                    attendanceList.removeChild(attendanceList.firstChild);
+                } else {
+                    attendanceList.firstChild.classList.add('hidden'); // Hide empty message if it exists
+                }
+            }
+
+            // attendanceData는 이미 화면 표시 순서 (최신순)로 정렬되어 있으며,
+            // 각 항목에 attendanceOrder (출석 순서)가 포함되어 있습니다.
+            attendanceData.forEach((item) => {
+                const card = document.createElement('div');
+                card.className = 'attendance-card bg-gray-50 rounded-lg p-4 flex justify-between items-center fade-in';
+                
+                let formattedDate = '날짜 정보 없음';
+                let formattedTime = '시간 정보 없음';
+
+                // Check if timestamp is a valid Firebase Timestamp object and format it.
+                if (item.timestamp && typeof item.timestamp.toDate === 'function') {
+                    const date = item.timestamp.toDate();
+                    formattedTime = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
+                    formattedDate = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
+                } else if (item.timestamp) {
+                    // Fallback for other timestamp formats (e.g., string)
+                    try {
+                        const date = new Date(item.timestamp);
+                        formattedTime = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
+                        formattedDate = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
+                    } catch (e) {
+                        console.warn("Timestamp parsing error:", item.timestamp, e);
+                    }
+                }
+                
+                // Construct HTML content for the attendance card
+                card.innerHTML = `
+                    <div class="flex items-center">
+                        <div class="bg-green-100 text-green-800 h-10 w-10 rounded-full flex items-center justify-center font-medium mr-3">
+                            ${item.attendanceOrder || '-'} <!-- 출석 순서 번호 사용 -->
+                        </div>
+                        <div>
+                            <h3 class="font-medium text-gray-800">${item.name}</h3>
+                            <p class="text-sm text-gray-500">${formattedDate} ${formattedTime}</p>
+                        </div>
+                    </div>
+                    <button class="delete-btn ${isAdminMode ? '' : 'hidden'}" data-id="${item.id}">삭제</button>
+                `;
+                attendanceList.appendChild(card); // Add card to the list
+            });
+        }
+
+        // Function to update the total count of attendees
+        function updateTotalCount() {
+            totalCount.textContent = `총 ${attendanceData.length}명`;
+        }
+
+        // Function to display the last update time as the current time
+        function updateLastUpdateTime() {
+            const now = new Date();
+            const hours = now.getHours().toString().padStart(2, '0');
+            const minutes = now.getMinutes().toString().padStart(2, '0');
+            const seconds = now.getSeconds().toString().padStart(2, '0');
+            lastUpdateTime.textContent = `${hours}:${minutes}:${seconds}`;
+        }
+
+        // Function to display form alert messages (success/error/warning)
+        function showFormAlert(message, type) {
+            formAlert.textContent = message;
+            // Remove all existing color classes.
+            formAlert.classList.remove('hidden', 'bg-green-100', 'text-green-800', 'bg-red-100', 'text-red-800', 'bg-yellow-100', 'text-yellow-800');
+            
+            // Add different color classes based on message type.
+            switch (type) {
+                case 'success':
+                    formAlert.classList.add('bg-green-100', 'text-green-800');
+                    break;
+                case 'error':
+                    formAlert.classList.add('bg-red-100', 'text-red-800');
+                    break;
+                case 'warning':
+                    formAlert.classList.add('bg-yellow-100', 'text-yellow-800');
+                    break;
+            }
+            
+            formAlert.classList.add('fade-in'); // Fade-in animation
+            formAlert.classList.remove('hidden'); // Display message
+
+            // Hide the alert after 3 seconds.
+            setTimeout(() => {
+                formAlert.classList.add('hidden');
+            }, 3000);
+        }
+
+        // Function to display alert messages inside the admin modal
+        function showAdminAlert(message, type) {
+            adminAlert.textContent = message;
+            adminAlert.classList.remove('hidden', 'bg-green-100', 'text-green-800', 'bg-red-100', 'text-red-800', 'bg-yellow-100', 'text-yellow-800');
+            
+            switch (type) {
+                case 'success':
+                    adminAlert.classList.add('bg-green-100', 'text-green-800');
+                    break;
+                case 'error':
+                    adminAlert.classList.add('bg-red-100', 'text-red-800');
+                    break;
+                case 'warning':
+                    adminAlert.classList.add('bg-yellow-100', 'text-yellow-800');
+                    break;
+            }
+            
+            adminAlert.classList.add('fade-in');
+            adminAlert.classList.remove('hidden');
+            
+            setTimeout(() => {
+                adminAlert.classList.add('hidden');
+            }, 3000);
+        }
+
+        // Function to display messages on the status bar at the bottom right
+        function showStatus(message, type, autoHide = true) {
+            statusBar.classList.remove('hidden');
+            
+            switch (type) {
+                case 'success':
+                    statusIcon.className = 'w-3 h-3 rounded-full mr-2 bg-green-500';
+                    statusText.className = 'text-sm text-green-700';
+                    break;
+                case 'warning':
+                    statusIcon.className = 'w-3 h-3 rounded-full mr-2 bg-yellow-500';
+                    statusText.className = 'text-sm text-yellow-700';
+                    break;
+                case 'info':
+                    statusIcon.className = 'w-3 h-3 rounded-full mr-2 bg-blue-500';
+                    statusText.className = 'text-sm text-blue-700';
+                    break;
+                case 'error':
+                    statusIcon.className = 'w-3 h-3 rounded-full mr-2 bg-red-500';
+                    statusText.className = 'text-sm text-red-700';
+                    break;
+            }
+            
+            statusText.textContent = message;
+            
+            if (autoHide) {
+                setTimeout(() => {
+                    statusBar.classList.add('hidden');
+                }, 3000);
+            }
+        }
+
+        // Function to show/hide the loading indicator (may not be frequently used due to onSnapshot)
+        function showLoading(isLoading) {
+            if (isLoading) {
+                loadingIndicator.classList.remove('hidden');
+            } else {
+                loadingIndicator.classList.add('hidden');
+            }
+        }
+
+        // Event listeners for admin modal
+        adminBtn.addEventListener('click', () => {
+            adminModal.style.display = 'flex'; // Show modal and center it using Flexbox
+            adminPassword.value = ''; // Clear password input
+            passwordSection.classList.remove('hidden'); // Show password input section
+            adminControlsSection.classList.add('hidden'); // Hide admin control section
+            adminAlert.classList.add('hidden'); // Hide alert messages
+            isAdminMode = false; // Reset admin mode when modal opens
+            renderAttendanceList(); // Re-render to hide delete buttons if not already hidden
+        });
+
+        // adminModal 닫기 버튼 (X 아이콘) 클릭 시
+        adminModalCloseBtn.addEventListener('click', () => {
+            adminModal.style.display = 'none'; // Close admin modal
+            isAdminMode = false; // Reset admin mode
+            renderAttendanceList(); // Re-render to hide delete buttons
+        });
+
+        cancelAdminBtn.addEventListener('click', () => {
+            adminModal.style.display = 'none'; // Close admin modal
+            isAdminMode = false; // Reset admin mode
+            renderAttendanceList(); // Re-render to hide delete buttons
+        });
+
+        closeAdminBtn.addEventListener('click', () => {
+            adminModal.style.display = 'none'; // Close admin modal
+            isAdminMode = false; // Reset admin mode
+            renderAttendanceList(); // Re-render to hide delete buttons
+        });
+
+        verifyAdminBtn.addEventListener('click', () => {
+            // Check if entered password matches the ADMIN_PASSWORD
+            if (adminPassword.value === ADMIN_PASSWORD) {
+                passwordSection.classList.add('hidden'); // Hide password section
+                adminControlsSection.classList.remove('hidden'); // Show admin control section
+                showAdminAlert('관리자 인증 완료!', 'success'); // Success message
+                isAdminMode = true; // Set admin mode to true
+                renderAttendanceList(); // Re-render to show delete buttons
+            } else {
+                adminPassword.classList.add('shake'); // Shake animation
+                setTimeout(() => adminPassword.classList.remove('shake'), 500);
+                adminPassword.value = ''; // Clear password input
+                adminPassword.focus(); // Focus back on input
+                showAdminAlert('비밀번호가 일치하지 않습니다.', 'error'); // Error message
+                isAdminMode = false; // Ensure admin mode is false
+                renderAttendanceList(); // Re-render to ensure buttons are hidden
+            }
+        });
+
+        // Event handler for resetting all attendance records
+        resetAttendanceBtn.addEventListener('click', () => {
+            // Use custom confirmation modal to ask user for confirmation
+            showConfirmationModal('정말로 모든 출석 기록을 초기화하시겠습니까? 이 작업은 되돌릴 수 없습니다.', async (confirmed) => {
+                if (confirmed) { // If user clicked 'Confirm'
+                    resetAttendanceBtn.disabled = true; // Disable button
+                    resetAttendanceBtn.innerHTML = '<div class="spinner mx-auto"></div>'; // Display loading spinner
+                    
+                    console.log('Attendance record reset requested');
+                    showStatus('출석 기록 초기화 중...', 'info', false);
+
+                    try {
+                        const attendanceCollectionRef = collection(db, `artifacts/${appId}/public/data/attendance`);
+                        const q = query(attendanceCollectionRef);
+                        const querySnapshot = await getDocs(q); // Get all current attendance documents.
+
+                        // Use Firestore transaction to safely handle multiple document deletions at once.
+                        if (!querySnapshot.empty) { // If there are documents
+                            await runTransaction(db, async (transaction) => {
+                                querySnapshot.forEach((doc) => {
+                                    transaction.delete(doc.ref); // Add each document to the delete transaction
+                                });
+                            });
+                        }
+                        
+                        showAdminAlert('모든 출석 기록이 초기화되었습니다.', 'success'); // Success message
+                        showStatus('모든 출석 기록 초기화 완료', 'success'); // Status bar message
+                        
+                        // Wait briefly until the UI update is complete before closing the modal.
+                        setTimeout(() => {
+                            adminModal.style.display = 'none'; // Close admin modal
+                            isAdminMode = false; // Exit admin mode
+                            renderAttendanceList(); // Re-render to hide delete buttons
+                        }, 1000); // Close modal after 1 second
+
+                    } catch (error) {
+                        console.error("Error resetting attendance:", error);
+                        showAdminAlert('초기화 중 오류가 발생했습니다.', 'error'); // Error message
+                        showStatus('초기화 실패', 'error');
+                    } finally {
+                        resetAttendanceBtn.disabled = false; // Re-enable button
+                        resetAttendanceBtn.textContent = '모든 출석 기록 초기화'; // Restore button text
+                        statusBar.classList.add('hidden'); // Hide status bar
+                    }
+                } else {
+                    console.log('Reset cancelled');
+                }
+            });
+        });
+
+        // Function to delete a single attendance entry
+        async function deleteAttendanceEntry(docId) {
+            showConfirmationModal('이 출석 기록을 정말로 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.', async (confirmed) => {
+                if (confirmed) { // If user clicked 'Confirm'
+                    console.log('Deleting document with ID:', docId);
+                    showStatus('출석 기록 삭제 중...', 'info', false);
+
+                    try {
+                        const attendanceDocRef = doc(db, `artifacts/${appId}/public/data/attendance`, docId);
+                        await deleteDoc(attendanceDocRef); // Delete the specific document
+                        showAdminAlert('출석 기록이 삭제되었습니다.', 'success');
+                        showStatus('출석 기록 삭제 완료', 'success');
+                    } catch (error) {
+                        console.error("Error deleting document:", error);
+                        showAdminAlert('삭제 중 오류가 발생했습니다.', 'error');
+                        showStatus('삭제 실패', 'error');
+                    } finally {
+                        statusBar.classList.add('hidden');
+                    }
+                } else {
+                    console.log('Deletion cancelled.');
+                }
+            });
+        }
+        
+        // Event delegation for dynamically created delete buttons
+        attendanceList.addEventListener('click', (e) => {
+            if (e.target && e.target.classList.contains('delete-btn')) {
+                const docId = e.target.dataset.id;
+                if (docId && isAdminMode) { // Ensure admin mode is active to trigger deletion
+                    deleteAttendanceEntry(docId);
+                } else if (!isAdminMode) {
+                    showAdminAlert('삭제하려면 관리자 인증이 필요합니다.', 'warning');
+                }
+            }
+        });
+
+        // Function to display a custom confirmation modal and pass user's choice via callback
+        function showConfirmationModal(message, callback) {
+            confirmationMessage.textContent = message; // Set message
+            confirmationModal.style.display = 'flex'; // Show modal (using Flexbox for centering)
+
+            // On 'Confirm' button click
+            const handleConfirm = () => {
+                confirmationModal.style.display = 'none'; // Hide modal
+                // Remove event listeners (to prevent multiple executions)
+                confirmProceedBtn.removeEventListener('click', handleConfirm);
+                confirmCancelBtn.removeEventListener('click', handleCancel);
+                confirmModalCloseBtn.removeEventListener('click', handleCancel); // 닫기 버튼 이벤트 제거
+                callback(true); // Pass true to callback (user confirmed)
+            };
+
+            // On 'Cancel' button click
+            const handleCancel = () => {
+                confirmationModal.style.display = 'none'; // Hide modal
+                // Remove event listeners
+                confirmProceedBtn.removeEventListener('click', handleConfirm);
+                confirmCancelBtn.removeEventListener('click', handleCancel);
+                confirmModalCloseBtn.removeEventListener('click', handleCancel); // 닫기 버튼 이벤트 제거
+                callback(false); // Pass false to callback (user cancelled)
+            };
+
+            // Attach event listeners to buttons
+            confirmProceedBtn.addEventListener('click', handleConfirm);
+            confirmCancelBtn.addEventListener('click', handleCancel);
+            confirmModalCloseBtn.addEventListener('click', handleCancel); // 닫기 버튼에도 이벤트 추가
+
+            // Close modal when clicking outside (treat as cancel)
+            confirmationModal.addEventListener('click', function(e) {
+                if (e.target === confirmationModal) {
+                    handleCancel();
+                }
+            });
+        }
+
+        // Event to close admin modal when clicking outside (password section)
+        adminModal.addEventListener('click', (e) => {
+            if (e.target === adminModal) {
+                adminModal.style.display = 'none';
+                isAdminMode = false; // Exit admin mode
+                renderAttendanceList(); // Re-render to hide delete buttons
+            }
+        });
+
+        // If Enter key is pressed in the admin password input, simulate a click on the verify button.
+        adminPassword.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                verifyAdminBtn.click();
+            }
+        });
+        
+        // Refresh data when page visibility (tab activation) changes (optional)
+        // This is not strictly necessary due to Firestore's onSnapshot, but can be kept
+        // for potential synchronization edge cases.
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                console.log('Page visibility changed: visible');
+                // You can re-initiate the data listener by calling startRealtimeAttendanceListener()
+                // or simply re-render the current data by calling renderAttendanceList().
+                // Since onSnapshot is active, this part might be removed depending on your needs.
+            }
+        });
+
+
+        // ===========================================
+        // QR Code Generation Logic
+        // ===========================================
+
+        qrCodeBtn.addEventListener('click', () => {
+            const currentUrl = window.location.href; // 현재 웹사이트 주소를 가져옴
+            qrCodeUrlDisplay.textContent = currentUrl; // URL 텍스트 표시
+
+            // 이전에 생성된 QR 코드가 있다면 지움 (새로 그리기 위해)
+            qrcodeContainer.innerHTML = ''; 
+
+            // QR 코드 생성
+            new QRCode(qrcodeContainer, {
+                text: currentUrl, // QR 코드로 만들 텍스트 (현재 웹사이트 주소)
+                width: 200,      // QR 코드 이미지 너비
+                height: 200,     // QR 코드 이미지 높이
+                colorDark : "#000000",
+                colorLight : "#ffffff",
+                correctLevel : QRCode.CorrectLevel.H // 오류 수정 레벨 (높게 설정)
+            });
+
+            qrCodeModal.style.display = 'flex'; // QR 코드 모달 팝업 표시
+        });
+
+        // QR 코드 모달 닫기 버튼
+        qrModalCloseBtn.addEventListener('click', () => {
+            qrCodeModal.style.display = 'none'; // 모달 숨기기
+            qrcodeContainer.innerHTML = ''; // QR 코드 초기화 (다음에 열 때 깨끗하게)
+        });
+
+        // QR 코드 모달 외부 클릭 시 닫기
+        qrCodeModal.addEventListener('click', (e) => {
+            if (e.target === qrCodeModal) {
+                qrCodeModal.style.display = 'none';
+                qrcodeContainer.innerHTML = '';
+            }
+        });
+
+        // URL 복사 버튼 기능
+        copyUrlBtn.addEventListener('click', () => {
+            const urlToCopy = qrCodeUrlDisplay.textContent;
+            // navigator.clipboard.writeText()는 iFrame에서 작동하지 않을 수 있으므로 대체 방법 사용
+            const textarea = document.createElement('textarea');
+            textarea.value = urlToCopy;
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+                showStatus('URL이 클립보드에 복사되었습니다!', 'success'); // 일반 상태 표시 함수 사용
+            } catch (err) {
+                showStatus('URL 복사에 실패했습니다. 직접 복사해주세요.', 'error');
+                console.error('Failed to copy URL:', err);
+            }
+            document.body.removeChild(textarea);
+        });
+
+        // ===========================================
+        // NEW: LLM (Gemini API) Integration Logic
+        // ===========================================
+
+        // 출석 현황 요약 버튼 이벤트 리스너
+        if (generateSummaryBtn) { 
+            generateSummaryBtn.addEventListener('click', async () => {
+                summaryModal.style.display = 'flex'; // 요약 모달 표시
+                summaryContent.textContent = ''; // 이전 내용 지우기
+                summaryLoadingIndicator.classList.remove('hidden'); // 로딩 스피너 표시
+
+                try {
+                    // LLM 프롬프트에 사용할 데이터 준비
+                    const totalAttendees = attendanceData.length;
+                    let newestAttendee = '없음';
+                    let oldestAttendee = '없음';
+
+                    if (attendanceData.length > 0) {
+                        // attendanceData는 최신순으로 정렬되어 있으므로 첫 번째가 가장 최근 출석자
+                        newestAttendee = attendanceData[0].name;
+
+                        // 가장 먼저 출석한 사람을 찾기 위해 원본 데이터(attendanceOrder가 부여된)에서 1번을 찾음
+                        const oldestFound = attendanceData.find(item => item.attendanceOrder === 1);
+                        oldestAttendee = oldestFound ? oldestFound.name : '없음';
+                    }
+
+                    const prompt = `현재 출석 시스템에 총 ${totalAttendees}명이 출석했습니다. 
+                    가장 최근 출석자는 "${newestAttendee}"님이며, 가장 먼저 출석한 사람은 "${oldestAttendee}"님입니다.
+                    이 정보를 바탕으로 간결하고 친근한 출석 현황 요약을 한국어로 작성해주세요. 존댓말을 사용해주세요.`;
+
+                    let chatHistory = [];
+                    chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+                    const payload = { contents: chatHistory };
+                    const apiKey = ""; // Canvas 환경에서 자동 제공됨
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(`API 오류: ${response.status} - ${errorData.error.message || response.statusText}`);
+                    }
+
+                    const result = await response.json();
+                    
+                    let summaryText = '요약 생성에 실패했습니다.';
+                    if (result.candidates && result.candidates.length > 0 &&
+                        result.candidates[0].content && result.candidates[0].content.parts &&
+                        result.candidates[0].content.parts.length > 0) {
+                        summaryText = result.candidates[0].content.parts[0].text;
+                    } else {
+                        console.error("LLM 응답 구조가 예상과 다릅니다:", result);
+                    }
+                    summaryContent.textContent = summaryText; // 생성된 요약 표시
+
+                } catch (error) {
+                    console.error("요약 생성 중 오류:", error);
+                    summaryContent.textContent = `요약 생성 중 오류가 발생했습니다: ${error.message}`;
+                } finally {
+                    summaryLoadingIndicator.classList.add('hidden'); // 로딩 스피너 숨기기
+                }
+            });
+        }
+
+        // 요약 모달 닫기 버튼들
+        if (summaryModalCloseBtn) {
+            summaryModalCloseBtn.addEventListener('click', () => {
+                summaryModal.style.display = 'none';
+                summaryContent.textContent = ''; // 모달 닫을 때 내용 지우기
+            });
+        }
+        if (closeSummaryModalBtn) {
+            closeSummaryModalBtn.addEventListener('click', () => {
+                summaryModal.style.display = 'none';
+                summaryContent.textContent = ''; // 모달 닫을 때 내용 지우기
+            });
+        }
+        if (summaryModal) {
+            summaryModal.addEventListener('click', (e) => {
+                if (e.target === summaryModal) {
+                    summaryModal.style.display = 'none';
+                    summaryContent.textContent = '';
+                }
+            });
+        }
+
+    </script>
+</body>
+</html>
