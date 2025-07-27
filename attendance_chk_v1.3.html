@@ -221,18 +221,17 @@
                 </div>
                 <div id="adminControlsSection" class="hidden">
                     <p class="text-gray-600 mb-4">관리자 인증이 완료되었습니다. 아래 버튼을 사용하여 출석 기록을 관리할 수 있습니다.</p>
-                    <div class="modal-buttons justify-end">
-                        <button id="closeAdminBtn" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors">
-                            닫기
+                    <div class="flex flex-wrap justify-center gap-3 mb-4"> <!-- 버튼들을 중앙 정렬하고 간격 추가 -->
+                        <button id="manageRosterBtn" class="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors flex-grow sm:flex-grow-0">
+                            명단 관리
                         </button>
-                        <button id="resetAttendanceBtn" class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors">
+                        <button id="resetAttendanceBtn" class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors flex-grow sm:flex-grow-0">
                             모든 출석 기록 초기화
                         </button>
                     </div>
-                    <!-- NEW: 명단 관리 버튼 -->
-                    <div class="modal-buttons justify-center mt-4">
-                        <button id="manageRosterBtn" class="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors">
-                            명단 관리
+                    <div class="flex justify-center"> <!-- '닫기' 버튼만 중앙 정렬 -->
+                        <button id="closeAdminBtn" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors w-full sm:w-auto">
+                            닫기
                         </button>
                     </div>
                 </div>
