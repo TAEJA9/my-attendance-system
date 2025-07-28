@@ -228,6 +228,10 @@
                         <button id="resetAttendanceBtn" class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors flex-grow sm:flex-grow-0">
                             모든 출석 기록 초기화
                         </button>
+                        <!-- NEW: CSV 다운로드 버튼 추가 -->
+                        <button id="exportCsvBtn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex-grow sm:flex-grow-0">
+                            <i class="fas fa-file-csv mr-2"></i> 명단 CSV 다운로드
+                        </button>
                     </div>
                     <div class="flex justify-center"> <!-- '닫기' 버튼만 중앙 정렬 -->
                         <button id="closeAdminBtn" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors w-full sm:w-auto">
@@ -371,6 +375,7 @@
         const adminControlsSection = document.getElementById('adminControlsSection');
         const adminAlert = document.getElementById('adminAlert');
         const adminModalCloseBtn = document.getElementById('adminModalCloseBtn');
+        const exportCsvBtn = document.getElementById('exportCsvBtn'); // NEW: CSV 다운로드 버튼
 
         // 확인 모달 요소
         const confirmationModal = document.getElementById('confirmationModal');
@@ -447,9 +452,7 @@
                         await fetchRoster(); // 명단 불러오기
                     } else {
                         // 사용자가 로그인되어 있지 않으면 익명 로그인 시도
-                        // 이전에 `await signInAnonymously(auth);`를 바깥에 두었지만
-                        // onAuthStateChanged 안에서 처리하는 것이 더 일반적이고 안정적입니다.
-                        if (!isAuthReady) { // 무한 루프 방지
+                        if (!isAuthReady) { // 무한 루프 방지 (이미 시도 중이면 다시 시도 안 함)
                             console.log("사용자 없음, 익명 로그인 시도...");
                             await signInAnonymously(auth);
                         }
@@ -457,10 +460,7 @@
                 });
 
                 // 페이지 로드 시 초기 인증 상태 확인 (onAuthStateChanged가 바로 호출될 수 있도록)
-                // 이 줄은 onAuthStateChanged가 즉시 호출되도록 돕지만, 실제 인증 처리는 리스너가 합니다.
-                // 만약 사용자가 이미 익명 로그인 되어있다면 onAuthStateChanged가 user 객체와 함께 호출됨.
-                // 그렇지 않다면 null로 호출되고, 위에서 signInAnonymously를 시도함.
-                if (!auth.currentUser) { // 현재 사용자가 없다면, 명시적으로 익명 로그인 시도
+                if (!auth.currentUser) {
                     console.log("초기 사용자 없음. 익명 로그인 시도 중...");
                     await signInAnonymously(auth);
                 }
@@ -540,11 +540,9 @@
                 if (docSnap.exists()) {
                     currentRoster = docSnap.data().names || [];
                     console.log("명단 불러오기 완료:", currentRoster);
-                    // showRosterAlert('명단이 성공적으로 불러와졌습니다.', 'success'); // 너무 자주 뜨지 않게 주석 처리
                 } else {
                     currentRoster = [];
                     console.log("저장된 명단이 없습니다.");
-                    // showRosterAlert('저장된 명단이 없습니다.', 'warning'); // 너무 자주 뜨지 않게 주석 처리
                 }
             } catch (error) {
                 console.error("명단 불러오기 오류:", error);
@@ -564,13 +562,12 @@
             
             console.log('출석 폼 제출', { name });
             
-            if (isSubmitting || !isAuthReady) { // isAuthReady 확인 추가
+            if (isSubmitting || !isAuthReady) {
                 if (!isAuthReady) showFormAlert('시스템 준비 중입니다. 잠시 후 다시 시도해주세요.', 'info');
                 return;
             }
             
             // 명단 대조 (새로 추가된 로직)
-            // 명단이 비어있으면 대조하지 않고 통과 (명단 기능을 사용하지 않을 경우 대비)
             if (currentRoster.length > 0) {
                 const normalizedName = name.toLowerCase(); // 대소문자 구분 없이 비교
                 const isInRoster = currentRoster.some(rosterName => rosterName.toLowerCase() === normalizedName);
@@ -643,20 +640,18 @@
         function renderAttendanceList() {
             console.log('출석 목록 렌더링 시작', { dataCount: attendanceData.length });
             
-            // 모든 기존 요소를 제거 (이 방법이 일반적으로 개별 removeChild보다 빠름)
+            // 모든 기존 요소를 제거하고 새로운 내용으로 채우는 방식
             attendanceList.innerHTML = ''; 
             
             if (!attendanceData || attendanceData.length === 0) {
-                // 데이터가 없으면 '아직 출석한 사람이 없습니다' 메시지를 다시 추가
                 const p = document.createElement('p');
-                p.id = 'emptyMessage'; // ID를 다시 부여 (스타일이나 나중에 참조할 수 있도록)
+                p.id = 'emptyMessage'; 
                 p.className = 'text-center text-gray-500 py-8';
                 p.textContent = '아직 출석한 사람이 없습니다';
                 attendanceList.appendChild(p);
                 return;
             }
             
-            // 데이터가 있으면 모든 출석 카드를 다시 그림
             attendanceData.forEach((item) => {
                 const card = document.createElement('div');
                 card.className = 'attendance-card bg-gray-50 rounded-lg p-4 flex justify-between items-center fade-in';
@@ -966,12 +961,10 @@
                 callback(false);
             };
 
-            // 이벤트 리스너를 한 번만 실행되도록 { once: true } 옵션 추가
             confirmProceedBtn.addEventListener('click', handleConfirm, { once: true });
             confirmCancelBtn.addEventListener('click', handleCancel, { once: true });
             confirmModalCloseBtn.addEventListener('click', handleCancel, { once: true });
 
-            // 모달 외부 클릭 시 닫기 (이것도 한 번만 실행되도록)
             confirmationModal.addEventListener('click', function(e) {
                 if (e.target === confirmationModal) {
                     handleCancel();
@@ -1031,8 +1024,6 @@
 
         copyUrlBtn.addEventListener('click', () => {
             const urlToCopy = qrCodeUrlDisplay.textContent;
-            // navigator.clipboard.writeText()는 iFrame에서 보안 문제로 작동 안 할 수 있음
-            // document.execCommand('copy')는 구형 방식이지만 더 넓게 작동
             const textarea = document.createElement('textarea');
             textarea.value = urlToCopy;
             document.body.appendChild(textarea);
@@ -1131,6 +1122,62 @@
             }
             rosterInput.value = currentRoster.join('\n'); // 입력창에도 현재 명단 넣어주기
         }
+
+        // ===========================================
+        // NEW: Export Attendance to CSV Logic (출석 명단 CSV 다운로드 로직)
+        // ===========================================
+        exportCsvBtn.addEventListener('click', () => {
+            if (!isAdminMode) {
+                showAdminAlert('CSV 다운로드는 관리자만 가능합니다.', 'warning');
+                return;
+            }
+            if (!attendanceData || attendanceData.length === 0) {
+                showAdminAlert('다운로드할 출석 기록이 없습니다.', 'warning');
+                return;
+            }
+
+            // CSV 헤더 (컬럼 이름)
+            const headers = [
+                "출석번호",
+                "이름",
+                "출석시간",
+                "사용자ID"
+            ];
+
+            // CSV 데이터 행 생성
+            const csvRows = attendanceData.map(item => {
+                const date = item.timestamp && typeof item.timestamp.toDate === 'function' ? item.timestamp.toDate() : null;
+                const formattedTime = date ? `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}` : '시간 정보 없음';
+
+                // CSV 형식에 맞게 데이터를 배열로 만들고, 쉼표나 따옴표가 포함될 수 있는 필드는 큰따옴표로 묶습니다.
+                return [
+                    item.attendanceOrder || '',
+                    `"${(item.name || '').replace(/"/g, '""')}"`, // 이름에 쉼표나 따옴표가 있을 경우 대비
+                    `"${formattedTime}"`,
+                    `"${item.userId || ''}"`
+                ].join(','); // 쉼표로 각 컬럼 구분
+            });
+
+            // 헤더와 데이터 행을 합치고 각 행은 줄바꿈으로 구분
+            const csvContent = [headers.join(','), ...csvRows].join('\n');
+
+            // Blob 객체 생성 (텍스트 데이터를 파일처럼 다루기 위함)
+            // '\ufeff'는 BOM(Byte Order Mark)으로, 엑셀에서 한글 깨짐 방지용
+            const blob = new Blob(['\ufeff', csvContent], { type: 'text/csv;charset=utf-8;' }); 
+
+            // 다운로드 링크 생성 및 클릭
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `출석명단_${new Date().toISOString().slice(0,10).replace(/-/g, '')}.csv`; // 파일 이름 (예: 출석명단_20250728.csv)
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url); // 메모리 해제
+
+            showAdminAlert('출석 명단 CSV 파일이 다운로드되었습니다.', 'success');
+            showStatus('CSV 다운로드 완료!', 'success');
+        });
 
     </script>
 </body>
